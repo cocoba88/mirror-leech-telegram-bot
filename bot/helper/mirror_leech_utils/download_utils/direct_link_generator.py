@@ -33,7 +33,7 @@ def direct_link_generator(link):
     elif any(x in domain for x in ["youtube.com", "youtu.be"]):
         return youtube(link)
     elif "videq.stream" in domain:
-        elif "videq.stream" in domain:
+        return x9buddy(link)
     elif "vide.cx" in domain:
         return x9buddy(link)
     elif "buzzheavier.com" in domain:
