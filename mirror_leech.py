@@ -135,7 +135,7 @@ class Mirror(TaskListener):
         self.thumbnail_layout = args["-tl"]
         self.as_doc = args["-doc"]
         self.as_med = args["-med"]
-        self.folder_name = f"/{args["-m"]}".rstrip("/") if len(args["-m"]) > 0 else ""
+        self.folder_name = f"/{args['-m']}".rstrip("/") if len(args["-m"]) > 0 else ""
         self.bot_trans = args["-bt"]
         self.user_trans = args["-ut"]
         self.ffmpeg_cmds = args["-ff"]
@@ -320,18 +320,39 @@ class Mirror(TaskListener):
             if content_type is None or re_match(r"text/html|text/plain", content_type):
                 try:
                     result = await sync_to_async(direct_link_generator, self.link)
-                    if isinstance(result, dict) and "local_path" in result:
-                        self.link = result["local_path"]
+                    LOGGER.info(f"Direct link generator result: {result}")
+                    if isinstance(result, dict) and "contents" in result:
+                        self.link = result
+                        LOGGER.info(f"Using direct download metadata: {self.link}")
+                        if not result.get("contents") or not all(await aiopath.exists(f) for f in result["contents"]):
+                            LOGGER.error(f"Local file(s) not found: {result.get('contents', [])}")
+                            await send_message(self.message, f"ERROR: Local file(s) not found: {result.get('contents', [])}")
+                            await self.remove_from_same_dir()
+                            return
                         await add_direct_download(self, path)
                     elif isinstance(result, tuple):
                         self.link, headers = result
-                        await add_aria2_download(self, path, headers, ratio, seed_time)
-                    elif isinstance(self.link, str):
-                        self.link = result
                         LOGGER.info(f"Generated link: {self.link}")
                         await add_aria2_download(self, path, headers, ratio, seed_time)
+                    elif isinstance(result, str):
+                        self.link = result
+                        LOGGER.info(f"Generated link (string): {self.link}")
+                        if await aiopath.exists(self.link):
+                            LOGGER.info(f"Using local file (string fallback): {self.link}")
+                            file_size = await aiopath.getsize(self.link)
+                            filename = os.path.basename(self.link)
+                            self.link = {
+                                "contents": [self.link],
+                                "total_size": file_size,
+                                "title": filename
+                            }
+                            await add_direct_download(self, path)
+                        else:
+                            LOGGER.info(f"Treating as URL: {self.link}")
+                            await add_aria2_download(self, path, headers, ratio, seed_time)
                 except DirectDownloadLinkException as e:
                     e = str(e)
+                    LOGGER.error(f"Direct download exception: {e}")
                     if "This link requires a password!" not in e:
                         LOGGER.info(e)
                     if e.startswith("ERROR:"):
@@ -339,7 +360,8 @@ class Mirror(TaskListener):
                         await self.remove_from_same_dir()
                         return
                 except Exception as e:
-                    await send_message(self.message, e)
+                    LOGGER.error(f"Error in direct link processing: {str(e)}")
+                    await send_message(self.message, str(e))
                     await self.remove_from_same_dir()
                     return
 
