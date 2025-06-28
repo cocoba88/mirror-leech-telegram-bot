@@ -11,13 +11,18 @@ import m3u8_To_MP4
 # Global variable untuk logging
 debug_log_file = None
 
-async def write_debug_log(message: str):
+def write_debug_log_sync(message: str):
+    """Versi sinkronus dari write_debug_log untuk fungsi non-async"""
     global debug_log_file
     if debug_log_file is None:
         debug_log_file = open("/root/Tera/debug_log.txt", "a", encoding="utf-8")
     debug_log_file.write(message + "\n")
     debug_log_file.flush()
     print(f"[xbuddy] {message}")
+
+async def write_debug_log(message: str):
+    """Versi asinkronus untuk fungsi async"""
+    write_debug_log_sync(message)
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename by removing invalid characters"""
@@ -48,7 +53,7 @@ def extract_filename_from_content_disposition(cd_header: str) -> str | None:
                     pass
                 return sanitize_filename(filename)
     except Exception as e:
-        await write_debug_log(f"[Filename Extraction] Error: {e}")
+        write_debug_log_sync(f"[Filename Extraction] Error: {e}")  # Gunakan versi sinkronus
     return None
 
 def determine_file_extension(content_type: str | None, url: str) -> str:
