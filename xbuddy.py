@@ -99,6 +99,7 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
             context = await browser.new_context(user_agent=user_agent)
             page = await context.new_page()
             download_path = None
+
             async def handle_download(download):
                 nonlocal download_path
                 filename = download.suggested_filename
@@ -108,7 +109,9 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                 filename = sanitize_filename(filename)
                 download_path = os.path.join(destination_dir, filename)
                 await download.save_as(download_path)
+
             page.on("download", handle_download)
+
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 await asyncio.sleep(5)
@@ -127,16 +130,19 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                             await elements[0].click()
                             await asyncio.sleep(5)
                             break
-                        except Exception as e:
+                        except Exception:
                             continue
                 await asyncio.sleep(5)
-            except Exception as e:
-            await browser.close()
+            except Exception:
+                pass  # You can add logging here if needed
+            finally:
+                await browser.close()
+
             if download_path and os.path.exists(download_path) and os.path.getsize(download_path) > 0:
                 return download_path
             else:
                 return None
-    except Exception as e:
+    except Exception:
         return None
 
 async def download_file_with_httpx(url: str, destination_dir: str, user_agent: str, referer: str | None = None, progress_callback=None) -> str | None:
