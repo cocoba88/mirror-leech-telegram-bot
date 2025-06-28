@@ -65,13 +65,25 @@ def determine_file_extension(content_type: str | None, url: str) -> str:
             return '.m4a'
     return '.mp4'
 
+async def extract_filename_from_page(page: Page, video_url: str) -> str | None:
+    """Extract filename from page title or metadata"""
+    try:
+        title = await page.title()
+        if title and title.strip():
+            filename = sanitize_filename(title.split('|')[0].strip())
+            if filename:
+                return filename + '.mp4'
+        return None
+    except Exception:
+        return None
+
 async def download_m3u8_direct(url: str, destination_dir: str, user_agent: str) -> str | None:
     """Download M3U8 content directly"""
     try:
         parsed_url = urlparse(url)
         filename = os.path.basename(parsed_url.path).replace(".m3u8", ".mp4")
         if not filename or filename == ".mp4":
-            filename = f"hls_download_{hashlib.md5(url.encode('utf-8')).hexdigest()}.mp4"
+            filename = f"video_{hashlib.md5(url.encode('utf-8')).hexdigest()[:8]}.mp4"
         filename = sanitize_filename(filename)
         output_path = os.path.join(destination_dir, filename)
         m3u8_To_MP4.multithread_download(url, output_path)
@@ -91,14 +103,14 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
             download_path = None
             async def handle_download(download):
                 nonlocal download_path
-                filename = download.suggested_filename or f"playwright_download_{hashlib.md5(url.encode('utf-8')).hexdigest()}.mp4"
+                filename = download.suggested_filename or f"video_{hashlib.md5(url.encode('utf-8')).hexdigest()[:8]}.mp4"
                 filename = sanitize_filename(filename)
                 download_path = os.path.join(destination_dir, filename)
                 await download.save_as(download_path)
             page.on("download", handle_download)
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=60000)  # Tingkatkan timeout ke 60 detik
-                await asyncio.sleep(10)  # Tambah waktu tunggu untuk memastikan halaman dimuat
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                await asyncio.sleep(10)
                 download_selectors = [
                     'a[href*="download"]',
                     'button[onclick*="download"]',
@@ -111,12 +123,12 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                     elements = await page.query_selector_all(selector)
                     if elements:
                         try:
-                            await elements[0].click()
-                            await asyncio.sleep(10)  # Tambah waktu tunggu setelah klik
+                            await elements[0].click(timeout=30000)
+                            await asyncio.sleep(10)
                             break
                         except Exception:
                             continue
-                await asyncio.sleep(10)  # Tambah waktu tunggu untuk menyelesaikan download
+                await asyncio.sleep(10)
             except Exception:
                 pass
             await browser.close()
@@ -150,7 +162,7 @@ async def download_file_with_httpx(url: str, destination_dir: str, user_agent: s
                     if url_filename and url_filename not in ["", ".", "/", "download"]:
                         filename = sanitize_filename(url_filename)
                 if not filename:
-                    filename = f"download_{hashlib.md5(url.encode('utf-8')).hexdigest()}"
+                    filename = f"video_{hashlib.md5(url.encode('utf-8')).hexdigest()[:8]}"
                 if not os.path.splitext(filename)[1]:
                     content_type = response.headers.get("content-type", "")
                     extension = determine_file_extension(content_type, url)
@@ -183,13 +195,13 @@ async def download_file_with_fallback(download_url: str, destination_dir: str, u
     is_m3u8 = ".m3u8" in download_url or "/hls/" in download_url
     if is_m3u8:
         result = await download_m3u8_direct(download_url, destination_dir, user_agent)
-        if result and not await check_duplicate_file(result, existing_files):  # Tambah await
+        if result and not await check_duplicate_file(result, existing_files):
             return result
     result = await download_file_with_httpx(download_url, destination_dir, user_agent, referer)
-    if result and not await check_duplicate_file(result, existing_files):  # Tambah await
+    if result and not await check_duplicate_file(result, existing_files):
         return result
     result = await download_with_playwright(download_url, destination_dir, user_agent)
-    if result and not await check_duplicate_file(result, existing_files):  # Tambah await
+    if result and not await check_duplicate_file(result, existing_files):
         return result
     return None
 
@@ -215,20 +227,23 @@ async def scrape_and_download_9xbuddy(video_url: str):
         context.on("page", handle_popup)
         
         try:
-            await page.goto(process_url, wait_until="domcontentloaded", timeout=60000)  # Tingkatkan timeout
+            await page.goto(process_url, wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_selector("main#root section.w-full.max-w-4xl", timeout=60000)
-            await asyncio.sleep(10)  # Tambah waktu tunggu
+            await asyncio.sleep(10)
+            
+            # Try to extract filename from page
+            filename = await extract_filename_from_page(page, video_url)
             
             # Try direct download button
             download_button_selector = "a.btn.btn-success.btn-lg.w-full.mt-4"
             if await page.query_selector(download_button_selector):
                 try:
                     async with page.expect_download() as download_info:
-                        await page.click(download_button_selector, timeout=30000)  # Tambah timeout untuk klik
+                        await page.click(download_button_selector, timeout=30000)
                     download = await download_info.value
-                    filename = download.suggested_filename or f"download_{hashlib.md5(video_url.encode()).hexdigest()}.mp4"
-                    filename = sanitize_filename(filename)
-                    download_path = os.path.join("/root/Tera/downloads", filename)
+                    suggested_filename = download.suggested_filename or filename or f"video_{hashlib.md5(video_url.encode()).hexdigest()[:8]}.mp4"
+                    suggested_filename = sanitize_filename(suggested_filename)
+                    download_path = os.path.join("/root/Tera/downloads", suggested_filename)
                     await download.save_as(download_path)
                     if os.path.exists(download_path) and os.path.getsize(download_path) > 0:
                         downloaded_file_paths.append(download_path)
