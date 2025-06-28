@@ -1,12 +1,27 @@
 import asyncio
 import re
+import httpx
 from playwright.async_api import async_playwright
+
+
+async def is_valid_url(url: str) -> bool:
+    """
+    Periksa apakah URL bisa diakses (return 200 OK)
+    """
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            response = await client.head(url)
+            content_type = response.headers.get("content-type", "")
+            return response.status_code == 200 and "text/html" not in content_type
+    except Exception as e:
+        print(f"[URL Check] Error checking {url}: {e}")
+        return False
 
 
 async def get_direct_url(video_url: str):
     """
     Ambil URL video langsung dari hasil scraping 9xbuddy.site.
-    Tidak mendownload ke server, hanya kembalikan link.
+    Coba urutan: .workers.dev > .9xbud.com > lainnya
     """
     extracted_download_urls = []
 
@@ -17,7 +32,8 @@ async def get_direct_url(video_url: str):
         context = await browser.new_context(user_agent=user_agent)
         page = await context.new_page()
 
-        process_url = f" https://9xbuddy.site/process?url={video_url}"  # ← Dinamis dari input
+        process_url = f" https://9xbuddy.site/process?url={video_url}"
+
         try:
             await page.goto(process_url, wait_until="domcontentloaded")
             await page.wait_for_selector("a[rel=\"noreferrer nofollow noopener\"]", timeout=30000)
@@ -39,6 +55,7 @@ async def get_direct_url(video_url: str):
 
             workers_dev_links = []
             ninexbud_links = []
+            video_src_links = []
             other_links = []
 
             for element in all_potential_download_links:
@@ -54,16 +71,24 @@ async def get_direct_url(video_url: str):
                             workers_dev_links.append(href)
                         elif ".9xbud.com" in href:
                             ninexbud_links.append(href)
+                        elif ".video-src.com" in href:
+                            video_src_links.append(href)
                         else:
                             other_links.append(href)
 
-            # Prioritas: workers.dev > 9xbud.com > lainnya
-            if workers_dev_links:
-                extracted_download_urls = workers_dev_links[:1]
-            elif ninexbud_links:
-                extracted_download_urls = ninexbud_links[:1]
-            else:
-                extracted_download_urls = other_links[:1]
+            # Urutan prioritas
+            candidates = (
+                workers_dev_links +
+                ninexbud_links +
+                video_src_links +
+                other_links
+            )
+
+            # Cek satu per satu hingga ketemu yang valid
+            for candidate in candidates:
+                if await is_valid_url(candidate):
+                    extracted_download_urls = [candidate]
+                    break
 
         except Exception as e:
             print(f"[Error] {e}")
