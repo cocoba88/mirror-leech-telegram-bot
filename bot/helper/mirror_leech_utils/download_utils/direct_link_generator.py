@@ -238,6 +238,7 @@ def get_captcha_token(session, params):
     res = session.post(f"{recaptcha_api}/reload", params=params)
     if token := findall(r'"rresp","(.*?)"', res.text):
         return token[0]
+        
 def youtube(url):
     """
     Generate a direct download link for YouTube URLs using the new API.
@@ -275,14 +276,15 @@ def youtube(url):
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+        
 def x9buddy_scrape(url):
     """
     Ambil URL video langsung dari hasil scraping 9xbuddy.site.
     Tidak mendownload ke server, hanya kembalikan link.
     """
     try:
-        loop = asyncio.get_event_loop()
-        direct_url = loop.run_until_complete(get_direct_url(url))
+        # Gunakan asyncio.run() agar aman di thread
+        direct_url = asyncio.run(get_direct_url(url))
 
         if not direct_url:
             raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan")
