@@ -6,14 +6,12 @@ import hashlib
 from urllib.parse import urlparse, unquote
 from pathlib import Path
 from playwright.async_api import async_playwright, Page, Request, Response, ConsoleMessage
-import m3u8_To_MP4  # Pastikan sudah install: pip install m3u8-To-MP4
+import m3u8_To_MP4
 import tempfile
 import shutil
 
-
 # Global variable untuk logging
 debug_log_file = None
-
 
 async def write_debug_log(message: str):
     global debug_log_file
@@ -23,17 +21,14 @@ async def write_debug_log(message: str):
     debug_log_file.flush()
     print(f"[xbuddy] {message}")
 
-
 def sanitize_filename(filename: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", filename).strip() or "video.mp4"
-
 
 def extract_filename_from_content_disposition(content_disposition: str) -> str:
     if "filename=" in content_disposition:
         filename = content_disposition.split("filename=")[-1].strip("\"'")
         return sanitize_filename(filename)
     return ""
-
 
 async def is_valid_url(url: str) -> bool:
     try:
@@ -44,15 +39,16 @@ async def is_valid_url(url: str) -> bool:
     except Exception:
         return False
 
-
 async def download_file_with_httpx(download_url: str, destination_dir: str, user_agent: str, referer: str = None, progress_callback=None):
     headers = {"User-Agent": user_agent}
     if referer:
         headers["Referer"] = referer
 
+    await write_debug_log(f"[HTTPX Download] Starting download: {download_url}")
     try:
         async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=60) as client:
             async with client.stream("GET", download_url) as response:
+                await write_debug_log(f"[HTTPX Download] Status code: {response.status_code}")
                 if response.status_code != 200:
                     await write_debug_log(f"[HTTPX Download] Gagal download: {response.status_code}")
                     return None
@@ -96,10 +92,8 @@ async def download_file_with_httpx(download_url: str, destination_dir: str, user
         await write_debug_log(f"[HTTPX Download] Error: {e}")
         return None
 
-
 async def handle_popup(popup_page):
     await popup_page.wait_for_load_state("domcontentloaded")
-
 
 async def scrape_and_download_9xbuddy(video_url: str):
     """
@@ -184,7 +178,6 @@ async def scrape_and_download_9xbuddy(video_url: str):
         finally:
             await context.close()
             await browser.close()
-
 
 async def get_direct_file(video_url: str):
     """
