@@ -280,18 +280,17 @@ def youtube(url):
 def x9buddy_scrape(url):
     """
     Ambil URL video langsung dari hasil scraping 9xbuddy.site.
-    Cek validitas link, jika gagal coba link lain (.9xbud.com, .video-src.com).
+    Cocok digunakan dalam bot Telegram/mirror bot.
     """
     try:
-        loop = asyncio.new_event_loop()  # ✅ Aman di thread
+        loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        direct_urls = loop.run_until_complete(get_all_valid_urls(url))
+        direct_url = loop.run_until_complete(get_direct_url(url))
 
-        if not direct_urls:
+        if not direct_url:
             raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan")
 
-        selected_url = direct_urls[0]
-        return selected_url
+        return direct_url
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
