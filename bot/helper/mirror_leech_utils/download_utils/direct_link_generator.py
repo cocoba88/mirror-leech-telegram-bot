@@ -290,7 +290,7 @@ def x9buddy_scrape(url):
         if not file_path:
             raise DirectDownloadLinkException("ERROR: Gagal download file")
 
-        return file_path
+        return file_path  # Kembalikan path file lokal
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
