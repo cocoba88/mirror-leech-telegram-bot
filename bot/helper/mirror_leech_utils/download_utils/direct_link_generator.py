@@ -283,13 +283,13 @@ def x9buddy_scrape(url):
     Cek validitas link, jika gagal coba link lain (.9xbud.com, .video-src.com).
     """
     try:
-        loop = asyncio.get_event_loop()
-        direct_urls = loop.run_until_complete(get_all_valid_urls(url))  # Fungsi baru untuk ambil semua link valid
+        loop = asyncio.new_event_loop()  # ✅ Aman di thread
+        asyncio.set_event_loop(loop)
+        direct_urls = loop.run_until_complete(get_all_valid_urls(url))
 
         if not direct_urls:
             raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan")
 
-        # Pilih salah satu link yang valid
         selected_url = direct_urls[0]
         return selected_url
 
