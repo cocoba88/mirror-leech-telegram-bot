@@ -7,6 +7,7 @@ from urllib.parse import urlparse, unquote
 from pathlib import Path
 from playwright.async_api import async_playwright, Page
 import m3u8_To_MP4
+from cloudscraper import create_scraper
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename by removing invalid characters"""
@@ -14,9 +15,9 @@ def sanitize_filename(filename: str) -> str:
     for char in invalid_chars:
         filename = filename.replace(char, '_')
     filename = re.sub(r'\s+', ' ', filename).strip()
-    if len(filename) > 150:
+    if len(filename) > 100:
         name_part, ext_part = os.path.splitext(filename)
-        filename = name_part[:140] + ext_part
+        filename = name_part[:90] + ext_part
     return filename or "video.mp4"
 
 def extract_filename_from_content_disposition(cd_header: str) -> str | None:
@@ -220,6 +221,16 @@ async def scrape_and_download_9xbuddy(video_url: str):
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     process_url = f"https://9xbuddy.site/process?url={video_url}"
     
+    # Gunakan cloudscraper untuk bypass Cloudflare
+    session = create_scraper()
+    try:
+        response = session.get(process_url)
+        if response.status_code != 200:
+            return None
+        page_content = response.text
+    except Exception:
+        return None
+    
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(user_agent=user_agent)
@@ -227,7 +238,7 @@ async def scrape_and_download_9xbuddy(video_url: str):
         context.on("page", handle_popup)
         
         try:
-            await page.goto(process_url, wait_until="domcontentloaded", timeout=60000)
+            await page.set_content(page_content, wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_selector("main#root section.w-full.max-w-4xl", timeout=60000)
             await asyncio.sleep(10)
             
@@ -312,7 +323,7 @@ async def get_direct_file(video_url: str):
     """Get local file path after downloading"""
     try:
         file_path = await scrape_and_download_9xbuddy(video_url)
-        if not file_path:
+        if not file_path or not os.path.exists(file_path):
             raise Exception("Failed to download file")
         return file_path
     except Exception:
