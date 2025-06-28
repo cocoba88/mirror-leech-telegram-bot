@@ -280,19 +280,15 @@ def youtube(url):
 def x9buddy_scrape(url):
     """
     Jalankan xbuddy.py untuk download dulu ke server,
-    lalu kembalikan path file lokal
+    lalu kembalikan metadata file
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        file_path = loop.run_until_complete(get_direct_file(url))
-        loop.close()
-
-        if not file_path or not ospath.exists(file_path):
-            raise DirectDownloadLinkException("ERROR: File tidak ditemukan atau gagal download")
-
-        return {"local_path": file_path}  # Kembalikan dict untuk membedakan dari URL
-
+        file_info = asyncio.run(get_direct_file(url))
+        if file_info and "contents" in file_info and file_info["contents"]:
+            if not ospath.exists(file_info["contents"][0]):
+                raise DirectDownloadLinkException(f"ERROR: File not found at {file_info['contents'][0]}")
+            return file_info
+        raise DirectDownloadLinkException("ERROR: Failed to download file from 9xbuddy :D")
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
 
