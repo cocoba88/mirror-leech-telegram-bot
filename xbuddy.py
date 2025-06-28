@@ -137,14 +137,12 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                 pass
             finally:
                 await browser.close()
-
             if download_path and os.path.exists(download_path) and os.path.getsize(download_path) > 0:
                 return download_path
             else:
                 return None
     except Exception:
         return None
-
 
 async def download_file_with_httpx(url: str, destination_dir: str, user_agent: str, referer: str | None = None, progress_callback=None) -> str | None:
     os.makedirs(destination_dir, exist_ok=True)
@@ -273,13 +271,17 @@ async def scrape_and_download_9xbuddy(video_url: str):
         page = await context.new_page()
         captured_requests = []
         captured_responses = []
+
         def request_handler(request: Request):
             captured_requests.append(request)
+
         def response_handler(response: Response):
             captured_responses.append(response)
+
         page.on("request", request_handler)
         page.on("response", response_handler)
         context.on("page", lambda popup_page: asyncio.create_task(handle_popup(popup_page)))
+
         process_url = f"https://9xbuddy.site/process?url={video_url}"
         try:
             await page.goto(process_url, wait_until="domcontentloaded")
@@ -287,6 +289,7 @@ async def scrape_and_download_9xbuddy(video_url: str):
             await asyncio.sleep(5)
             html_content = await page.content()
             download_button_selector = "a.btn.btn-success.btn-lg.w-full.mt-4"
+
             if await page.query_selector(download_button_selector):
                 try:
                     async with page.expect_download() as download_info:
@@ -298,111 +301,132 @@ async def scrape_and_download_9xbuddy(video_url: str):
                     await download.save_as(download_path)
                     downloaded_file_paths.append(download_path)
                 except Exception as e:
+                    pass
             else:
-            unwanted_patterns = [
-                r"facebook\.com/sharer",
-                r"twitter\.com/intent",
-                r"vk\.com/share\.php",
-                r"//9xbud\.com/https://", 
-                r"offmp3\.net/process",   
-                r"savegif\.com/process",  
-                r"123sudo\.com",          
-                r"/process\?url=https://vstream\.id/embed/" 
-            ]
-            all_potential_download_links = await page.query_selector_all("main#root a[rel=\"noreferrer nofollow noopener\"]")
-            mp4_available = False
-            mpeg_available = False
-            format_selectors = [
-                "#root > section > section.w-full.max-w-4xl.my-2.mx-auto > section.py-3.lg\\:py-6.px-4 > div.mb-4.mt-8.text-center > div:nth-child(2) > div.w-full.lg\\:w-2\\/3.flex.justify-center.items-center > div.w-24.sm\\:w-1\\/3.lg\\:w-24.text-blue-500.uppercase",
-                "div.w-24.sm\\:w-1\\/3.lg\\:w-24.text-blue-500.uppercase"
-            ]
-            for selector in format_selectors:
                 try:
-                    format_elements = await page.query_selector_all(selector)
-                    for element in format_elements:
-                        text = await element.text_content()
-                        if text:
-                            text = text.lower().strip()
-                            if text == "mp4":
-                                mp4_available = True
-                            elif text == "mpeg":
-                                mpeg_available = True
-                except Exception as e:
-            resolution_480_found = False
-            if mp4_available or mpeg_available:
-                resolution_selectors = [
-                    "#root > section > section.w-full.max-w-4xl.my-2.mx-auto > section.py-3.lg\\:py-6.px-4 > div.mb-4.mt-8.text-center > div:nth-child(2) > div.w-full.lg\\:w-2\\/3.flex.justify-center.items-center > div.w-1\\/2.sm\\:w-1\\/3.lg\\:w-1\\/2.truncate",
-                    "div.w-1\\/2.sm\\:w-1\\/3.lg\\:w-1\\/2.truncate",
-                    "div.truncate"
-                ]
-                for selector in resolution_selectors:
-                    try:
-                        resolution_elements = await page.query_selector_all(selector)
-                        for element in resolution_elements:
-                            text = await element.text_content()
-                            if text and "480" in text:
-                                resolution_480_found = True
-                                break
-                        if resolution_480_found:
-                            break
-                    except Exception as e:
-            workers_dev_links = []
-            ninexbud_links = []
-            other_links = []
-            resolution_480_links = []
-            for element in all_potential_download_links:
-                href = await element.get_attribute("href")
-                if href:
-                    is_unwanted = False
-                    for pattern in unwanted_patterns:
-                        if re.search(pattern, href):
-                            is_unwanted = True
-                            break
-                    if not is_unwanted:
+                    unwanted_patterns = [
+                        r"facebook\\.com/sharer",
+                        r"twitter\\.com/intent",
+                        r"vk\\.com/share\\.php",
+                        r"//9xbud\\.com/https://",
+                        r"offmp3\\.net/process",
+                        r"savegif\\.com/process",
+                        r"123sudo\\.com",
+                        r"/process\\?url=https://vstream\\.id/embed/"
+                    ]
+                    all_potential_download_links = await page.query_selector_all("main#root a[rel=\"noreferrer nofollow noopener\"]")
+                    mp4_available = False
+                    mpeg_available = False
+                    format_selectors = [
+                        "#root > section > section.w-full.max-w-4xl.my-2.mx-auto > section.py-3.lg\\:py-6.px-4 > div.mb-4.mt-8.text-center > div:nth-child(2) > div.w-full.lg\\:w-2\\/3.flex.justify-center.items-center > div.w-24.sm\\:w-1\\/3.lg\\:w-24.text-blue-500.uppercase",
+                        "div.w-24.sm\\:w-1\\/3.lg\\:w-24.text-blue-500.uppercase"
+                    ]
+                    for selector in format_selectors:
                         try:
-                            parent_div = await element.query_selector("xpath=..")
-                            if parent_div:
-                                parent_text = await parent_div.text_content()
-                                if parent_text and "480" in parent_text:
-                                    resolution_480_links.append(href)
-                                    continue
+                            format_elements = await page.query_selector_all(selector)
+                            for element in format_elements:
+                                text = await element.text_content()
+                                if text:
+                                    text = text.lower().strip()
+                                    if text == "mp4":
+                                        mp4_available = True
+                                    elif text == "mpeg":
+                                        mpeg_available = True
                         except Exception as e:
-                        if ".workers.dev" in href:
-                            workers_dev_links.append(href)
-                        elif ".9xbud.com" in href:
-                            ninexbud_links.append(href)
-                        else:
-                            other_links.append(href)
-            if resolution_480_links:
-                extracted_download_urls = resolution_480_links
-            elif workers_dev_links:
-                extracted_download_urls = workers_dev_links[:1]
-            elif ninexbud_links:
-                extracted_download_urls = ninexbud_links[:1]
-            else:
-                extracted_download_urls = other_links[:1]
-            for link in extracted_download_urls:
+                            pass
+
+                    resolution_480_found = False
+                    if mp4_available or mpeg_available:
+                        resolution_selectors = [
+                            "#root > section > section.w-full.max-w-4xl.my-2.mx-auto > section.py-3.lg\\:py-6.px-4 > div.mb-4.mt-8.text-center > div:nth-child(2) > div.w-full.lg\\:w-2\\/3.flex.justify-center.items-center > div.w-1\\/2.sm\\:w-1\\/3.lg\\:w-1\\/2.truncate",
+                            "div.w-1\\/2.sm\\:w-1\\/3.lg\\:w-1\\/2.truncate",
+                            "div.truncate"
+                        ]
+                        for selector in resolution_selectors:
+                            try:
+                                resolution_elements = await page.query_selector_all(selector)
+                                for element in resolution_elements:
+                                    text = await element.text_content()
+                                    if text and "480" in text:
+                                        resolution_480_found = True
+                                        break
+                                if resolution_480_found:
+                                    break
+                            except Exception as e:
+                                pass
+
+                    workers_dev_links = []
+                    ninexbud_links = []
+                    other_links = []
+                    resolution_480_links = []
+                    for element in all_potential_download_links:
+                        href = await element.get_attribute("href")
+                        if href:
+                            is_unwanted = False
+                            for pattern in unwanted_patterns:
+                                if re.search(pattern, href):
+                                    is_unwanted = True
+                                    break
+                            if not is_unwanted:
+                                try:
+                                    parent_div = await element.query_selector("xpath=..")
+                                    if parent_div:
+                                        parent_text = await parent_div.text_content()
+                                        if parent_text and "480" in parent_text:
+                                            resolution_480_links.append(href)
+                                            continue
+                                except Exception as e:
+                                    pass
+                                if ".workers.dev" in href:
+                                    workers_dev_links.append(href)
+                                elif ".9xbud.com" in href:
+                                    ninexbud_links.append(href)
+                                else:
+                                    other_links.append(href)
+
+                    if resolution_480_links:
+                        extracted_download_urls = resolution_480_links
+                    elif workers_dev_links:
+                        extracted_download_urls = workers_dev_links[:1]
+                    elif ninexbud_links:
+                        extracted_download_urls = ninexbud_links[:1]
+                    else:
+                        extracted_download_urls = other_links[:1]
+
+                    for link in extracted_download_urls:
+                        pass
+
+                except Exception as e:
+                    pass
+
         except Exception as e:
+            pass
         finally:
             await browser.close()
+
     if extracted_download_urls:
         for i, download_url in enumerate(extracted_download_urls):
             downloaded_path = await download_file_with_fallback(
-                download_url, 
-                "/root/Tera/downloads", 
-                user_agent, 
+                download_url,
+                "/root/Tera/downloads",
+                user_agent,
                 process_url,
                 downloaded_file_paths
             )
             if downloaded_path:
-                downloaded_file_paths.append(downloaded_path)
+                downloaded_file_paths.append(download_path)
                 break
             else:
+                pass
     else:
+        pass
+
     for file_path in downloaded_file_paths:
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
         else:
+            pass
+
     return extracted_download_urls, downloaded_file_paths
 
 async def handle_popup(popup_page: Page):
