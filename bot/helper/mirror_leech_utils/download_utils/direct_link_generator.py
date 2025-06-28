@@ -288,7 +288,7 @@ def x9buddy_scrape(url):
         direct_url = loop.run_until_complete(get_direct_url(url))
 
         if not direct_url:
-            raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan")
+            raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan :D")
 
         return direct_url
 
