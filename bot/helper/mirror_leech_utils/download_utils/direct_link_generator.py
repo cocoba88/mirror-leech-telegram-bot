@@ -11,8 +11,10 @@ from time import sleep
 from urllib.parse import parse_qs, urlparse, quote
 from urllib3.util.retry import Retry
 from uuid import uuid4
+import asyncio
 from base64 import b64decode, b64encode
 
+from .xbuddy import get_direct_url
 from ....core.config_manager import Config
 from ...ext_utils.exceptions import DirectDownloadLinkException
 from ...ext_utils.help_messages import PASSWORD_ERROR_MESSAGE
@@ -32,8 +34,8 @@ def direct_link_generator(link):
         return yandex_disk(link)
     elif any(x in domain for x in ["youtube.com", "youtu.be"]):
         return youtube(link)
-    elif "videq.stream" in domain:
-        return x9buddy(link)
+    elif "videq.stream" in domain or "vide.cx" in domain:
+        return x9buddy_scrape(link)
     elif "vide.cx" in domain:
         return x9buddy(link)
     elif "buzzheavier.com" in domain:
@@ -273,63 +275,22 @@ def youtube(url):
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
-def x9buddy(url):
+def x9buddy_scrape(url):
     """
-    Generate direct download link for vide.cx using 9xbuddy API.
-    @param url: URL from vide.cx
-    @return: Direct download link or details dictionary
+    Ambil URL video langsung dari hasil scraping 9xbuddy.site.
+    Tidak mendownload ke server, hanya kembalikan link.
     """
-    api_url = "https://api.paxsenix.biz.id/dl/9xbuddy"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer sk-paxsenix-o5rC4al3uVrNmwoaTx2wDeyHlMx045CPACxxhqbWohXicFIr"
-    }
-    params = {"url": url}
-
     try:
-        response = get(api_url, params=params, headers=headers).json()
+        loop = asyncio.get_event_loop()
+        direct_url = loop.run_until_complete(get_direct_url(url))
+
+        if not direct_url:
+            raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan")
+
+        return direct_url
+
     except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
-
-    if not response.get("ok"):
-        raise DirectDownloadLinkException("ERROR: Failed to fetch data from 9xbuddy API")
-
-    formats = response["response"]["formats"]
-    
-    # Filter video MP4
-    video_links = [f for f in formats if f["type"] == "video" and "mp4" in f["ext"]]
-
-    if not video_links:
-        raise DirectDownloadLinkException("ERROR: No MP4 video links found in response")
-
-    # Pilih kualitas terbaik: Original > Backup > Backup - /2
-    quality_order = ["Original", "Backup", "Backup - /2"]
-    selected_video = next((v for v in video_links if v["quality"] == "Original"), None)
-    if not selected_video:
-        selected_video = next((v for v in video_links if v["quality"] == "Backup"), None)
-    if not selected_video:
-        selected_video = next((v for v in video_links if v["quality"] == "Backup - /2"), None)
-    if not selected_video:
-        selected_video = video_links[0]  # fallback ke yang pertama
-
-    direct_url = selected_video["url"].strip()
-
-    title = response["response"].get("title", "Unknown")
-    filename = f"{title}.mp4"
-
-    details = {
-        "contents": [{
-            "path": "",
-            "filename": filename,
-            "url": direct_url
-        }],
-        "title": title,
-        "total_size": 0,  # Tidak diketahui
-        "header": ""
-    }
-
-    return details["contents"][0]["url"]  # Kembalikan hanya URL langsung
-    # return details  # Jika ingin seluruh struktur metadata
+        raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
 
 def buzzheavier(url):
     """
