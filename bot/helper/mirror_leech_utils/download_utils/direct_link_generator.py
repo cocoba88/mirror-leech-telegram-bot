@@ -30,6 +30,12 @@ def direct_link_generator(link):
         raise DirectDownloadLinkException("ERROR: Invalid URL")
     elif "yadi.sk" in link or "disk.yandex." in link:
         return yandex_disk(link)
+    elif any(x in domain for x in ["youtube.com", "youtu.be"]):
+        return youtube(link)
+    elif "videq.stream" in domain:
+        elif "videq.stream" in domain:
+    elif "vide.cx" in domain:
+        return x9buddy(link)
     elif "buzzheavier.com" in domain:
         return buzzheavier(link)
     elif "devuploads" in domain:
@@ -230,7 +236,100 @@ def get_captcha_token(session, params):
     res = session.post(f"{recaptcha_api}/reload", params=params)
     if token := findall(r'"rresp","(.*?)"', res.text):
         return token[0]
+def youtube(url):
+    """
+    Generate a direct download link for YouTube URLs using the new API.
+    @param url: URL from youtube.com or youtu.be
+    @return: Direct download link or details dictionary
+    """
+    try:
+        # Encode the URL
+        encoded_url = quote(url)
+        api_url = f"https://www.ikyiizyy.my.id/download/ytmp4?apikey=new&url={encoded_url}"
 
+        # Request to the API
+        response = get(api_url, headers={"User-Agent": user_agent}).json()
+
+        # Check status
+        if not response.get("status") or "result" not in response:
+            raise DirectDownloadLinkException("ERROR: Invalid response or download link not found")
+
+        result = response["result"]
+
+        # Build details dictionary
+        details = {
+            "contents": [{
+                "path": "",
+                "filename": f"{result['title']}.mp4",
+                "url": result["download"]
+            }],
+            "title": result.get("title", "Unknown Title"),
+            "total_size": 0,  # Tidak tersedia di response
+            "header": ""
+        }
+
+        return details["contents"][0]["url"]  # Jika hanya ingin langsung link
+        # return details  # Jika ingin seluruh detail
+
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+def x9buddy(url):
+    """
+    Generate direct download link for vide.cx using 9xbuddy API.
+    @param url: URL from vide.cx
+    @return: Direct download link or details dictionary
+    """
+    api_url = "https://api.paxsenix.biz.id/dl/9xbuddy "
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer sk-paxsenix-o5rC4al3uVrNmwoaTx2wDeyHlMx045CPACxxhqbWohXicFIr"
+    }
+    params = {"url": url}
+
+    try:
+        response = get(api_url, params=params, headers=headers).json()
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+
+    if not response.get("ok"):
+        raise DirectDownloadLinkException("ERROR: Failed to fetch data from 9xbuddy API")
+
+    formats = response["response"]["formats"]
+    
+    # Filter video MP4
+    video_links = [f for f in formats if f["type"] == "video" and "mp4" in f["ext"]]
+
+    if not video_links:
+        raise DirectDownloadLinkException("ERROR: No MP4 video links found in response")
+
+    # Pilih kualitas terbaik: Original > Backup > Backup - /2
+    quality_order = ["Original", "Backup", "Backup - /2"]
+    selected_video = next((v for v in video_links if v["quality"] == "Original"), None)
+    if not selected_video:
+        selected_video = next((v for v in video_links if v["quality"] == "Backup"), None)
+    if not selected_video:
+        selected_video = next((v for v in video_links if v["quality"] == "Backup - /2"), None)
+    if not selected_video:
+        selected_video = video_links[0]  # fallback ke yang pertama
+
+    direct_url = selected_video["url"].strip()
+
+    title = response["response"].get("title", "Unknown")
+    filename = f"{title}.mp4"
+
+    details = {
+        "contents": [{
+            "path": "",
+            "filename": filename,
+            "url": direct_url
+        }],
+        "title": title,
+        "total_size": 0,  # Tidak diketahui
+        "header": ""
+    }
+
+    return details["contents"][0]["url"]  # Kembalikan hanya URL langsung
+    # return details  # Jika ingin seluruh struktur metadata
 
 def buzzheavier(url):
     """
