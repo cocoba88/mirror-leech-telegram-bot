@@ -21,7 +21,7 @@ async def is_valid_url(url: str) -> bool:
 async def get_direct_url(video_url: str):
     """
     Ambil URL video langsung dari hasil scraping 9xbuddy.site.
-    Coba urutan: .workers.dev > .9xbud.com > lainnya
+    Coba urutan: .workers.dev > .9xbud.com > .video-src.com > lainnya
     """
     extracted_download_urls = []
 
