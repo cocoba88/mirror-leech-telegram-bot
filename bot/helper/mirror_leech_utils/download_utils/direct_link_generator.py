@@ -280,7 +280,7 @@ def youtube(url):
 def x9buddy_scrape(url):
     """
     Jalankan xbuddy.py untuk download dulu ke server,
-    lalu kembalikan path file
+    lalu kembalikan path file lokal
     """
     try:
         loop = asyncio.new_event_loop()
@@ -288,9 +288,9 @@ def x9buddy_scrape(url):
         file_path = loop.run_until_complete(get_direct_file(url))
 
         if not file_path:
-            raise DirectDownloadLinkException("ERROR: Gagal download file")
+            raise DirectDownloadLinkException("ERROR: Gagal download file dari 9xbuddy")
 
-        return file_path  # Kembalikan path file lokal
+        return file_path
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
