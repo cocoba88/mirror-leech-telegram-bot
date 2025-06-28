@@ -280,16 +280,18 @@ def youtube(url):
 def x9buddy_scrape(url):
     """
     Ambil URL video langsung dari hasil scraping 9xbuddy.site.
-    Tidak mendownload ke server, hanya kembalikan link.
+    Cek validitas link, jika gagal coba link lain (.9xbud.com, .video-src.com).
     """
     try:
-        # Gunakan asyncio.run() agar aman di thread
-        direct_url = asyncio.run(get_direct_url(url))
+        loop = asyncio.get_event_loop()
+        direct_urls = loop.run_until_complete(get_all_valid_urls(url))  # Fungsi baru untuk ambil semua link valid
 
-        if not direct_url:
+        if not direct_urls:
             raise DirectDownloadLinkException("ERROR: Tidak ada link ditemukan")
 
-        return direct_url
+        # Pilih salah satu link yang valid
+        selected_url = direct_urls[0]
+        return selected_url
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
