@@ -17,8 +17,7 @@ async def get_direct_url(video_url: str):
         context = await browser.new_context(user_agent=user_agent)
         page = await context.new_page()
 
-        process_url = f"https://9xbuddy.site/process?url={video_url}"
-
+        process_url = f" https://9xbuddy.site/process?url={video_url}"  # ← Dinamis dari input
         try:
             await page.goto(process_url, wait_until="domcontentloaded")
             await page.wait_for_selector("a[rel=\"noreferrer nofollow noopener\"]", timeout=30000)
@@ -41,7 +40,6 @@ async def get_direct_url(video_url: str):
             workers_dev_links = []
             ninexbud_links = []
             other_links = []
-            resolution_480_links = []
 
             for element in all_potential_download_links:
                 href = await element.get_attribute("href")
@@ -59,10 +57,8 @@ async def get_direct_url(video_url: str):
                         else:
                             other_links.append(href)
 
-            # Prioritas: 480p > workers.dev > 9xbud.com > lainnya
-            if resolution_480_links:
-                extracted_download_urls = resolution_480_links
-            elif workers_dev_links:
+            # Prioritas: workers.dev > 9xbud.com > lainnya
+            if workers_dev_links:
                 extracted_download_urls = workers_dev_links[:1]
             elif ninexbud_links:
                 extracted_download_urls = ninexbud_links[:1]
