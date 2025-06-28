@@ -7,8 +7,6 @@ from urllib.parse import urlparse, unquote
 from pathlib import Path
 from playwright.async_api import async_playwright, Page, Request, Response, ConsoleMessage
 import m3u8_To_MP4
-import tempfile
-import shutil
 
 # Global variable untuk logging
 debug_log_file = None
@@ -22,121 +20,283 @@ async def write_debug_log(message: str):
     print(f"[xbuddy] {message}")
 
 def sanitize_filename(filename: str) -> str:
-    return re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", filename).strip() or "video.mp4"
+    """Sanitize filename by removing invalid characters"""
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        filename = filename.replace(char, '_')
+    filename = re.sub(r'\s+', ' ', filename).strip()
+    if len(filename) > 150:
+        name_part, ext_part = os.path.splitext(filename)
+        filename = name_part[:140] + ext_part
+    return filename or "video.mp4"
 
-def extract_filename_from_content_disposition(content_disposition: str) -> str:
-    if "filename=" in content_disposition:
-        filename = content_disposition.split("filename=")[-1].strip("\"'")
-        return sanitize_filename(filename)
-    return ""
-
-async def is_valid_url(url: str) -> bool:
+def extract_filename_from_content_disposition(cd_header: str) -> str | None:
+    """Extract filename from Content-Disposition header"""
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            response = await client.head(url)
-            content_type = response.headers.get("content-type", "")
-            return response.status_code == 200 and "text/html" not in content_type
-    except Exception:
-        return False
+        patterns = [
+            r'filename\*?=(?:UTF-8\'\')?["\']?([^;"\']+)["\']?',
+            r'filename=([^;]+)',
+            r'filename\*=UTF-8\'\'([^;]+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, cd_header, re.IGNORECASE)
+            if match:
+                filename = match.group(1).strip().strip('"\'')
+                try:
+                    filename = unquote(filename)
+                except:
+                    pass
+                return sanitize_filename(filename)
+    except Exception as e:
+        await write_debug_log(f"[Filename Extraction] Error: {e}")
+    return None
 
-async def download_file_with_httpx(download_url: str, destination_dir: str, user_agent: str, referer: str = None, progress_callback=None):
-    headers = {"User-Agent": user_agent}
+def determine_file_extension(content_type: str | None, url: str) -> str:
+    """Determine appropriate file extension based on content type and URL"""
+    parsed_url = urlparse(url)
+    url_path = parsed_url.path
+    if url_path and '.' in os.path.basename(url_path):
+        url_ext = os.path.splitext(url_path)[1].lower()
+        if url_ext in ['.mp4', '.mpeg', '.mpg', '.avi', '.mkv', '.mov', '.mp3', '.wav', '.m4a']:
+            return url_ext
+    if content_type:
+        content_type = content_type.lower().split(';')[0].strip()
+        if any(video_type in content_type for video_type in ['video/mp4', 'video/mpeg']):
+            return '.mp4'
+        elif 'video/quicktime' in content_type:
+            return '.mov'
+        elif 'video/x-msvideo' in content_type:
+            return '.avi'
+        elif 'video/x-matroska' in content_type:
+            return '.mkv'
+        elif 'audio/mpeg' in content_type:
+            return '.mp3'
+        elif 'audio/wav' in content_type:
+            return '.wav'
+        elif 'audio/mp4' in content_type:
+            return '.m4a'
+    return '.mp4'
+
+async def download_m3u8_direct(url: str, destination_dir: str, user_agent: str) -> str | None:
+    """Download M3U8 content directly"""
+    try:
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path).replace(".m3u8", ".mp4")
+        if not filename or filename == ".mp4":
+            filename = f"hls_download_{hashlib.md5(url.encode('utf-8')).hexdigest()}.mp4"
+        filename = sanitize_filename(filename)
+        output_path = os.path.join(destination_dir, filename)
+        await write_debug_log(f"[M3U8 Direct] Attempting M3U8 download to: {output_path}")
+        m3u8_To_MP4.multithread_download(url, output_path)
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            await write_debug_log(f"[M3U8 Direct] Successfully downloaded: {output_path}")
+            return output_path
+        else:
+            await write_debug_log(f"[M3U8 Direct] Download completed but file is missing or empty")
+            return None
+    except Exception as e:
+        await write_debug_log(f"[M3U8 Error] Failed to download M3U8 from {url}: {e}")
+        return None
+
+async def download_with_playwright(url: str, destination_dir: str, user_agent: str) -> str | None:
+    """Download file using Playwright"""
+    try:
+        await write_debug_log(f"[Playwright Download] Attempting download: {url}")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(user_agent=user_agent)
+            page = await context.new_page()
+            download_path = None
+            async def handle_download(download):
+                nonlocal download_path
+                filename = download.suggested_filename or f"playwright_download_{hashlib.md5(url.encode('utf-8')).hexdigest()}.mp4"
+                filename = sanitize_filename(filename)
+                download_path = os.path.join(destination_dir, filename)
+                await download.save_as(download_path)
+                await write_debug_log(f"[Playwright Download] Downloaded: {download_path}")
+            page.on("download", handle_download)
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(5)
+                download_selectors = [
+                    'a[href*="download"]',
+                    'button[onclick*="download"]',
+                    '.download-btn',
+                    '.btn-download',
+                    'a[download]',
+                    'input[type="submit"][value*="download"]'
+                ]
+                for selector in download_selectors:
+                    elements = await page.query_selector_all(selector)
+                    if elements:
+                        await write_debug_log(f"[Playwright Download] Found download element: {selector}")
+                        try:
+                            await elements[0].click()
+                            await asyncio.sleep(5)
+                            break
+                        except Exception as e:
+                            await write_debug_log(f"[Playwright Download] Failed to click element: {e}")
+                            continue
+                await asyncio.sleep(5)
+            except Exception as e:
+                await write_debug_log(f"[Playwright Download] Error during navigation: {e}")
+            await browser.close()
+            if download_path and os.path.exists(download_path) and os.path.getsize(download_path) > 0:
+                return download_path
+            else:
+                await write_debug_log(f"[Playwright Download] Download failed or file is empty")
+                return None
+    except Exception as e:
+        await write_debug_log(f"[Playwright Download] Error: {e}")
+        return None
+
+async def download_file_with_httpx(url: str, destination_dir: str, user_agent: str, referer: str | None = None) -> str | None:
+    """Download file using httpx"""
+    os.makedirs(destination_dir, exist_ok=True)
+    headers = {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+    }
     if referer:
         headers["Referer"] = referer
-
-    await write_debug_log(f"[HTTPX Download] Starting download: {download_url}")
     try:
-        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=60) as client:
-            async with client.stream("GET", download_url) as response:
-                await write_debug_log(f"[HTTPX Download] Status code: {response.status_code}")
-                if response.status_code != 200:
-                    await write_debug_log(f"[HTTPX Download] Gagal download: {response.status_code}")
-                    return None
-
-                content_length = int(response.headers.get("Content-Length", 0))
-                downloaded = 0
-                cd_header = response.headers.get("Content-Disposition")
-                filename = ""
-
-                if cd_header:
-                    filename = extract_filename_from_content_disposition(cd_header)
-
+        await write_debug_log(f"[HTTPX Download] Attempting download: {url}")
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0)) as client:
+            async with client.stream("GET", url, headers=headers, follow_redirects=True) as response:
+                response.raise_for_status()
+                filename = None
+                if "content-disposition" in response.headers:
+                    filename = extract_filename_from_content_disposition(response.headers["content-disposition"])
+                    await write_debug_log(f"[HTTPX Download] Extracted filename: {filename}")
                 if not filename:
-                    parsed_url = urlparse(download_url)
-                    url_path = parsed_url.path.strip("/")
-                    if "?" in url_path:
-                        url_path = url_path.split("?")[0]
-                    filename = url_path.split("/")[-1] or "video.mp4"
-
-                if not filename.endswith(".mp4"):
-                    filename += ".mp4"
+                    parsed_url = urlparse(url)
+                    url_filename = os.path.basename(parsed_url.path).split("?")[0]
+                    if url_filename and url_filename not in ["", ".", "/", "download"]:
+                        filename = sanitize_filename(url_filename)
+                        await write_debug_log(f"[HTTPX Download] Using URL-based filename: {filename}")
+                if not filename:
+                    filename = f"download_{hashlib.md5(url.encode('utf-8')).hexdigest()}"
+                    await write_debug_log(f"[HTTPX Download] Generated hash-based filename: {filename}")
+                if not os.path.splitext(filename)[1]:
+                    content_type = response.headers.get("content-type", "")
+                    extension = determine_file_extension(content_type, url)
+                    filename += extension
+                    await write_debug_log(f"[HTTPX Download] Added extension: {extension}")
                 filename = sanitize_filename(filename)
-
-                file_path = Path(destination_dir) / filename
-
-                if file_path.exists():
-                    await write_debug_log(f"[Download] File sudah ada: {file_path}")
-                    return str(file_path)
-
-                with open(file_path, "wb") as f:
-                    async for chunk in response.aiter_bytes(8192):  # 8KB per chunk
+                destination_path = os.path.join(destination_dir, filename)
+                content_length = response.headers.get("content-length")
+                total_size = int(content_length) if content_length else 0
+                downloaded = 0
+                with open(destination_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(8192):
                         f.write(chunk)
                         downloaded += len(chunk)
-                        percent = downloaded / content_length * 100 if content_length else 0
-                        await write_debug_log(f"[Progress] {downloaded}/{content_length} bytes ({percent:.2f}%))")
-
-                await write_debug_log(f"[HTTPX Download] Berhasil simpan: {file_path}")
-                return str(file_path)
-
+                        if total_size > 0 and downloaded % (1024 * 1024) == 0:
+                            progress = (downloaded / total_size) * 100
+                            await write_debug_log(f"[HTTPX Download] Progress: {downloaded/1024/1024:.2f}/{total_size/1024/1024:.2f} MB ({progress:.1f}%)")
+                if os.path.exists(destination_path) and os.path.getsize(destination_path) > 0:
+                    file_size = os.path.getsize(destination_path)
+                    await write_debug_log(f"[HTTPX Download] Successfully downloaded: {destination_path} ({file_size} bytes)")
+                    return destination_path
+                else:
+                    await write_debug_log(f"[HTTPX Download] Download failed - file missing or empty")
+                    return None
+    except httpx.HTTPStatusError as e:
+        await write_debug_log(f"[HTTPX Download] HTTP error: {e.response.status_code}")
+        return None
     except Exception as e:
         await write_debug_log(f"[HTTPX Download] Error: {e}")
         return None
 
-async def handle_popup(popup_page):
-    await popup_page.wait_for_load_state("domcontentloaded")
+async def check_duplicate_file(file_path: str, existing_files: list) -> bool:
+    """Check if file is duplicate based on size"""
+    if not os.path.exists(file_path):
+        return False
+    file_size = os.path.getsize(file_path)
+    for existing_file in existing_files:
+        if os.path.exists(existing_file) and os.path.getsize(existing_file) == file_size:
+            return True
+    return False
+
+async def download_file_with_fallback(download_url: str, destination_dir: str, user_agent: str, referer: str, existing_files: list = None) -> str | None:
+    """Download file with fallback methods"""
+    if existing_files is None:
+        existing_files = []
+    await write_debug_log(f"[Fallback Download] Starting for: {download_url}")
+    is_m3u8 = ".m3u8" in download_url or "/hls/" in download_url
+    if is_m3u8:
+        await write_debug_log(f"[Fallback Download] Attempting M3U8 download")
+        result = await download_m3u8_direct(download_url, destination_dir, user_agent)
+        if result and not check_duplicate_file(result, existing_files):
+            return result
+    await write_debug_log(f"[Fallback Download] Attempting HTTPX download")
+    result = await download_file_with_httpx(download_url, destination_dir, user_agent, referer)
+    if result and not check_duplicate_file(result, existing_files):
+        return result
+    await write_debug_log(f"[Fallback Download] Attempting Playwright download")
+    result = await download_with_playwright(download_url, destination_dir, user_agent)
+    if result and not check_duplicate_file(result, existing_files):
+        return result
+    await write_debug_log(f"[Fallback Download] All methods failed")
+    return None
+
+async def handle_popup(popup_page: Page):
+    """Handle popup pages"""
+    await write_debug_log(f"[Popup Detected] URL: {popup_page.url}")
+    try:
+        await popup_page.wait_for_load_state("domcontentloaded", timeout=10000)
+        await popup_page.close()
+        await write_debug_log("[Popup Closed]")
+    except Exception as e:
+        await write_debug_log(f"[Popup Error] {e}")
 
 async def scrape_and_download_9xbuddy(video_url: str):
-    """
-    Scraping halaman 9xbuddy.site dan langsung download ke server.
-    Prioritas: .workers.dev > .9xbud.com > lainnya
-    """
-    workers_dev_links = []
-    ninexbud_links = []
-    video_src_links = []
-    other_links = []
-
+    """Scrape 9xbuddy.site and download file"""
+    extracted_download_urls = []
+    downloaded_file_paths = []
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-
+    process_url = f"https://9xbuddy.site/process?url={video_url}"
+    
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(user_agent=user_agent)
         page = await context.new_page()
-
         page.on("console", lambda msg: asyncio.create_task(write_debug_log(f"[Console {msg.type.upper()}] {msg.text}")))
         page.on("pageerror", lambda err: asyncio.create_task(write_debug_log(f"[Page Error] {err}")))
-
-        def request_handler(req: Request):
-            asyncio.create_task(write_debug_log(f"[Request] {req.method} {req.url}"))
-
-        def response_handler(res: Response):
-            asyncio.create_task(write_debug_log(f"[Response] {res.status} {res.url}"))
-
-        page.on("request", request_handler)
-        page.on("response", response_handler)
+        page.on("request", lambda req: asyncio.create_task(write_debug_log(f"[Request] {req.method} {req.url}")))
+        page.on("response", lambda res: asyncio.create_task(write_debug_log(f"[Response] {res.status} {res.url}")))
         context.on("page", handle_popup)
-
-        process_url = f"https://9xbuddy.site/process?url={video_url}"
-        await write_debug_log(f"[Scraping] Navigating to: {process_url}")
-
+        
         try:
-            await page.goto(process_url, wait_until="networkidle")
-            await page.wait_for_timeout(10000)
-
-            links = await page.eval_on_selector_all(
-                "a[rel='noreferrer nofollow noopener']",
-                "els => els.map(el => el.href)"
-            )
-
+            await write_debug_log(f"[Scraping] Navigating to: {process_url}")
+            await page.goto(process_url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_selector("main#root section.w-full.max-w-4xl", timeout=30000)
+            await asyncio.sleep(5)
+            
+            # Try direct download button
+            download_button_selector = "a.btn.btn-success.btn-lg.w-full.mt-4"
+            if await page.query_selector(download_button_selector):
+                await write_debug_log("[Scraping] Found download button")
+                try:
+                    async with page.expect_download() as download_info:
+                        await page.click(download_button_selector)
+                    download = await download_info.value
+                    filename = download.suggested_filename or f"download_{hashlib.md5(video_url.encode()).hexdigest()}.mp4"
+                    filename = sanitize_filename(filename)
+                    download_path = os.path.join("/root/Tera/downloads", filename)
+                    await download.save_as(download_path)
+                    if os.path.exists(download_path) and os.path.getsize(download_path) > 0:
+                        downloaded_file_paths.append(download_path)
+                        await write_debug_log(f"[Scraping] Downloaded via button: {download_path}")
+                        await context.close()
+                        await browser.close()
+                        return download_path
+                except Exception as e:
+                    await write_debug_log(f"[Scraping] Failed to download via button: {e}")
+            
+            # Extract download links
             unwanted_patterns = [
                 r"facebook\.com/sharer",
                 r"twitter\.com/intent",
@@ -144,51 +304,66 @@ async def scrape_and_download_9xbuddy(video_url: str):
                 r"offmp3\.net/process",
                 r"savegif\.com/process",
                 r"123sudo\.com",
+                r"/process\?url=https://vstream\.id/embed/"
             ]
-
-            for href in links:
-                is_unwanted = any(re.search(pattern, href) for pattern in unwanted_patterns)
-                if not is_unwanted:
+            resolution_480_links = []
+            workers_dev_links = []
+            ninexbud_links = []
+            other_links = []
+            
+            links = await page.query_selector_all("a[rel='noreferrer nofollow noopener']")
+            for element in links:
+                href = await element.get_attribute("href")
+                if href and not any(re.search(pattern, href) for pattern in unwanted_patterns):
+                    parent_div = await element.query_selector("xpath=..")
+                    if parent_div:
+                        parent_text = await parent_div.text_content()
+                        if parent_text and "480" in parent_text:
+                            resolution_480_links.append(href)
+                            await write_debug_log(f"[Link Filtering] Found 480p link: {href}")
+                            continue
                     if ".workers.dev" in href:
                         workers_dev_links.append(href)
+                        await write_debug_log(f"[Link Filtering] Found workers.dev link: {href}")
                     elif ".9xbud.com" in href:
                         ninexbud_links.append(href)
-                    elif ".video-src.com" in href:
-                        video_src_links.append(href)
+                        await write_debug_log(f"[Link Filtering] Found 9xbud.com link: {href}")
                     else:
                         other_links.append(href)
-
-            candidates = workers_dev_links + ninexbud_links + video_src_links + other_links
-            downloaded_path = None
-
-            for candidate in candidates:
-                if await is_valid_url(candidate):
-                    downloaded_path = await download_file_with_httpx(candidate, "/root/Tera/downloads", user_agent, referer=process_url)
-                    if downloaded_path:
-                        break
-
-            if not downloaded_path and candidates:
-                downloaded_path = await download_file_with_httpx(candidates[0], "/root/Tera/downloads", user_agent, referer=process_url)
-
-            return downloaded_path
-
+                        await write_debug_log(f"[Link Filtering] Found other link: {href}")
+            
+            extracted_download_urls = resolution_480_links + workers_dev_links[:1] + ninexbud_links[:1] + other_links[:1]
+            await write_debug_log(f"[Scraping] Found {len(extracted_download_urls)} download URLs")
+            
+            # Download files
+            for download_url in extracted_download_urls:
+                downloaded_path = await download_file_with_fallback(
+                    download_url,
+                    "/root/Tera/downloads",
+                    user_agent,
+                    process_url,
+                    downloaded_file_paths
+                )
+                if downloaded_path:
+                    downloaded_file_paths.append(downloaded_path)
+                    await write_debug_log(f"[Download] Success: {downloaded_path}")
+                    break
+            
         except Exception as e:
-            await write_debug_log(f"[Scraping] Error saat scraping: {e}")
-            return None
+            await write_debug_log(f"[Scraping] Error: {e}")
         finally:
             await context.close()
             await browser.close()
+    
+    return downloaded_file_paths[0] if downloaded_file_paths else None
 
 async def get_direct_file(video_url: str):
-    """
-    Ambil path file lokal setelah selesai didownload.
-    Cocok digunakan oleh bot Telegram/mirror bot
-    """
+    """Get local file path after downloading"""
     try:
         file_path = await scrape_and_download_9xbuddy(video_url)
         if not file_path:
-            raise Exception("Gagal download dari xbuddy.py")
+            raise Exception("Failed to download file")
         return file_path
     except Exception as e:
-        await write_debug_log(f"Gagal mendapatkan file: {e}")
+        await write_debug_log(f"[get_direct_file] Error: {e}")
         return None
