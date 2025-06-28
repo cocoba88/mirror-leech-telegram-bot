@@ -12,16 +12,6 @@ import shutil
 # Global variable for the debug log file
 debug_log_file = None
 
-async def log_debug(message: str):
-    log_file = Path('/root/Tera/logs/debug_log.txt')
-    # Buat direktori jika belum ada
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"{message}\n")
-    except Exception as e:
-        LOGGER.error(f"Failed to write to debug log: {str(e)}")
-
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename by removing invalid characters"""
     invalid_chars = '<>:"/\\|?*'
