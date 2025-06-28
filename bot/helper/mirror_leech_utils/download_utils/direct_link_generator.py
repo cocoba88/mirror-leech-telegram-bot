@@ -285,13 +285,13 @@ def x9buddy_scrape(url):
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        file_path = loop.run_until_complete(get_direct_file(url))  # Ubah ke get_direct_file
+        file_path = loop.run_until_complete(get_direct_file(url))
         loop.close()
 
-        if not file_path or not ospath.isfile(file_path):
+        if not file_path or not ospath.exists(file_path):
             raise DirectDownloadLinkException("ERROR: File tidak ditemukan atau gagal download")
 
-        return file_path  # Kembalikan path file lokalশ
+        return {"local_path": file_path}  # Kembalikan dict untuk membedakan dari URL
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
