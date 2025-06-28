@@ -279,7 +279,7 @@ def x9buddy(url):
     @param url: URL from vide.cx
     @return: Direct download link or details dictionary
     """
-    api_url = "https://api.paxsenix.biz.id/dl/9xbuddy "
+    api_url = "https://api.paxsenix.biz.id/dl/9xbuddy"
     headers = {
         "Content-Type": "application/json",
         "Authorization": "Bearer sk-paxsenix-o5rC4al3uVrNmwoaTx2wDeyHlMx045CPACxxhqbWohXicFIr"
