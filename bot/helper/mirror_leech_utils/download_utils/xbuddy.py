@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 from pathlib import Path
-from urllib.parse import urlparse
 from httpx import AsyncClient
 from playwright.async_api import async_playwright
 
@@ -33,8 +32,7 @@ async def is_valid_url(url: str) -> bool:
             response = await client.head(url)
             content_type = response.headers.get("content-type", "")
             return response.status_code == 200 and "text/html" not in content_type
-    except Exception as e:
-        await write_debug_log(f"[URL Check] Error checking {url}: {e}")
+    except Exception:
         return False
 
 
@@ -67,16 +65,15 @@ async def download_file_with_httpx(download_url: str, destination_dir: str, user
 
                 if not filename.endswith(".mp4"):
                     filename += ".mp4"
-
                 filename = sanitize_filename(filename)
-                file_path = os.path.join(destination_dir, filename)
+
+                file_path = Path(destination_dir) / filename
 
                 # Cek apakah file sudah ada
-                if os.path.exists(file_path):
-                    await write_debug_log(f"[Download] File sudah ada: {file_path}")
-                    return file_path
+                if file_path.exists():
+                    await write_debug_log(f"[HTTPX Download] File sudah ada: {file_path}")
+                    return str(file_path)
 
-                # Mulai download
                 with open(file_path, "wb") as f:
                     async for chunk in response.aiter_bytes(8192):  # 8KB per chunk
                         f.write(chunk)
@@ -85,7 +82,7 @@ async def download_file_with_httpx(download_url: str, destination_dir: str, user
                         await write_debug_log(f"[Progress] {downloaded}/{content_length} bytes ({percent:.2f}%))")
 
                 await write_debug_log(f"[HTTPX Download] Berhasil simpan: {file_path}")
-                return file_path
+                return str(file_path)
 
     except Exception as e:
         await write_debug_log(f"[HTTPX Download] Error: {e}")
@@ -94,8 +91,8 @@ async def download_file_with_httpx(download_url: str, destination_dir: str, user
 
 async def scrape_and_download_9xbuddy(video_url: str):
     """
-    Scraping halaman 9xbuddy.site untuk ambil link download.
-    Prioritas: .workers.dev > .9xbud.com > .video-src.com > lainnya
+    Scraping halaman 9xbuddy.site dan download file ke server.
+    Prioritas: .workers.dev > .9xbud.com > lainnya
     """
     workers_dev_links = []
     ninexbud_links = []
@@ -122,10 +119,7 @@ async def scrape_and_download_9xbuddy(video_url: str):
             unwanted_patterns = [
                 r"facebook\.com/sharer",
                 r"twitter\.com/intent",
-                r"vk\.com/share\.php",
-                r"offmp3\.net/process",
-                r"savegif\.com/process",
-                r"123sudo\.com"
+                r"vk\.com/share\.php"
             ]
 
             for element in all_potential_download_links:
@@ -143,19 +137,18 @@ async def scrape_and_download_9xbuddy(video_url: str):
                             other_links.append(href)
 
             candidates = workers_dev_links + ninexbud_links + video_src_links + other_links
+            downloaded_path = None
 
-            downloaded_file = None
             for candidate in candidates:
                 if await is_valid_url(candidate):
-                    downloaded_file = await download_file_with_httpx(candidate, DOWNLOAD_DIR, user_agent, referer=process_url)
-                    if downloaded_file:
-                        break  # Hentikan jika berhasil download
+                    downloaded_path = await download_file_with_httpx(candidate, DOWNLOAD_DIR, user_agent, referer=process_url)
+                    if downloaded_path:
+                        break
 
-            if not downloaded_file and candidates:
-                # Fallback ke link pertama meskipun tidak valid
-                downloaded_file = await download_file_with_httpx(candidates[0], DOWNLOAD_DIR, user_agent, referer=process_url)
+            if not downloaded_path and candidates:
+                downloaded_path = await download_file_with_httpx(candidates[0], DOWNLOAD_DIR, user_agent, referer=process_url)
 
-            return downloaded_file
+            return downloaded_path
 
         except Exception as e:
             await write_debug_log(f"[Scraping] Error saat scraping: {e}")
@@ -167,14 +160,15 @@ async def scrape_and_download_9xbuddy(video_url: str):
 
 async def get_direct_file(video_url: str):
     """
-    Ambil satu file langsung dari hasil scraping 9xbuddy.site
+    Hanya kembalikan path file setelah selesai didownload
+    Cocok digunakan oleh bot Telegram/mirror bot
     """
     try:
         file_path = await scrape_and_download_9xbuddy(video_url)
         if not file_path:
-            await write_debug_log("Tidak ada file berhasil didownload")
+            await write_debug_log("Gagal mendapatkan file")
             return None
         return file_path
     except Exception as e:
-        await write_debug_log(f"Gagal mendapatkan file: {e}")
+        await write_debug_log(f"Gagal proses {video_url}: {e}")
         return None
