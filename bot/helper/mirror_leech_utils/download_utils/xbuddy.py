@@ -97,8 +97,8 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                 await download.save_as(download_path)
             page.on("download", handle_download)
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await asyncio.sleep(5)
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)  # Tingkatkan timeout ke 60 detik
+                await asyncio.sleep(10)  # Tambah waktu tunggu untuk memastikan halaman dimuat
                 download_selectors = [
                     'a[href*="download"]',
                     'button[onclick*="download"]',
@@ -112,11 +112,11 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                     if elements:
                         try:
                             await elements[0].click()
-                            await asyncio.sleep(5)
+                            await asyncio.sleep(10)  # Tambah waktu tunggu setelah klik
                             break
                         except Exception:
                             continue
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)  # Tambah waktu tunggu untuk menyelesaikan download
             except Exception:
                 pass
             await browser.close()
@@ -183,13 +183,13 @@ async def download_file_with_fallback(download_url: str, destination_dir: str, u
     is_m3u8 = ".m3u8" in download_url or "/hls/" in download_url
     if is_m3u8:
         result = await download_m3u8_direct(download_url, destination_dir, user_agent)
-        if result and not check_duplicate_file(result, existing_files):
+        if result and not await check_duplicate_file(result, existing_files):  # Tambah await
             return result
     result = await download_file_with_httpx(download_url, destination_dir, user_agent, referer)
-    if result and not check_duplicate_file(result, existing_files):
+    if result and not await check_duplicate_file(result, existing_files):  # Tambah await
         return result
     result = await download_with_playwright(download_url, destination_dir, user_agent)
-    if result and not check_duplicate_file(result, existing_files):
+    if result and not await check_duplicate_file(result, existing_files):  # Tambah await
         return result
     return None
 
@@ -215,16 +215,16 @@ async def scrape_and_download_9xbuddy(video_url: str):
         context.on("page", handle_popup)
         
         try:
-            await page.goto(process_url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_selector("main#root section.w-full.max-w-4xl", timeout=30000)
-            await asyncio.sleep(5)
+            await page.goto(process_url, wait_until="domcontentloaded", timeout=60000)  # Tingkatkan timeout
+            await page.wait_for_selector("main#root section.w-full.max-w-4xl", timeout=60000)
+            await asyncio.sleep(10)  # Tambah waktu tunggu
             
             # Try direct download button
             download_button_selector = "a.btn.btn-success.btn-lg.w-full.mt-4"
             if await page.query_selector(download_button_selector):
                 try:
                     async with page.expect_download() as download_info:
-                        await page.click(download_button_selector)
+                        await page.click(download_button_selector, timeout=30000)  # Tambah timeout untuk klik
                     download = await download_info.value
                     filename = download.suggested_filename or f"download_{hashlib.md5(video_url.encode()).hexdigest()}.mp4"
                     filename = sanitize_filename(filename)
