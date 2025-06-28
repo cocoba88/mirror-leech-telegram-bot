@@ -287,10 +287,10 @@ def x9buddy_scrape(url):
         asyncio.set_event_loop(loop)
         file_path = loop.run_until_complete(get_direct_file(url))
 
-        if not file_path:
-            raise DirectDownloadLinkException("ERROR: Gagal download file dari 9xbuddy")
+        if not file_path or not os.path.isfile(file_path):
+            raise DirectDownloadLinkException("ERROR: File tidak ditemukan atau gagal download")
 
-        return file_path
+        return file_path  # Kembalikan path file lokal
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
