@@ -14,7 +14,7 @@ from uuid import uuid4
 import asyncio
 from base64 import b64decode, b64encode
 
-from .xbuddy import get_direct_url
+from .xbuddy import get_direct_file  # Ubah dari get_direct_url ke get_direct_file
 from ....core.config_manager import Config
 from ...ext_utils.exceptions import DirectDownloadLinkException
 from ...ext_utils.help_messages import PASSWORD_ERROR_MESSAGE
@@ -285,12 +285,13 @@ def x9buddy_scrape(url):
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        file_path = loop.run_until_complete(get_direct_file(url))
+        file_path = loop.run_until_complete(get_direct_file(url))  # Ubah ke get_direct_file
+        loop.close()
 
-        if not file_path or not os.path.isfile(file_path):
+        if not file_path or not ospath.isfile(file_path):
             raise DirectDownloadLinkException("ERROR: File tidak ditemukan atau gagal download")
 
-        return file_path  # Kembalikan path file lokal
+        return file_path  # Kembalikan path file lokalশ
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
