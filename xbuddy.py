@@ -134,7 +134,7 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                             continue
                 await asyncio.sleep(5)
             except Exception:
-                pass  # You can add logging here if needed
+                pass
             finally:
                 await browser.close()
 
@@ -144,6 +144,7 @@ async def download_with_playwright(url: str, destination_dir: str, user_agent: s
                 return None
     except Exception:
         return None
+
 
 async def download_file_with_httpx(url: str, destination_dir: str, user_agent: str, referer: str | None = None, progress_callback=None) -> str | None:
     os.makedirs(destination_dir, exist_ok=True)
