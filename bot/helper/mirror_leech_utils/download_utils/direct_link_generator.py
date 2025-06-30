@@ -313,7 +313,7 @@ def x9buddy(url):
     selected_video = next((v for v in video_links if ".workers.dev" in v["url"]), None)
 
     if not selected_video:
-        raise DirectDownloadLinkException("ERROR: Belum Support)
+        raise DirectDownloadLinkException("ERROR: Belum Support")
 
     direct_url = selected_video["url"].strip()
     title = response["response"].get("title", "Unknown")
