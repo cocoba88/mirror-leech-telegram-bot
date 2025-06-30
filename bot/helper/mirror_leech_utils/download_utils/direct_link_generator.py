@@ -11,10 +11,8 @@ from time import sleep
 from urllib.parse import parse_qs, urlparse, quote
 from urllib3.util.retry import Retry
 from uuid import uuid4
-import asyncio
 from base64 import b64decode, b64encode
 
-from .xbuddy import get_direct_file  # Ubah dari get_direct_url ke get_direct_file
 from ....core.config_manager import Config
 from ...ext_utils.exceptions import DirectDownloadLinkException
 from ...ext_utils.help_messages import PASSWORD_ERROR_MESSAGE
@@ -24,7 +22,14 @@ from ...ext_utils.status_utils import speed_string_to_bytes
 user_agent = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
 )
-
+x9_domains = [
+    "0deh.com", "5gxno.info", "bokepindoh.onl", "capexh.world", "doodss.lat",
+    "filemoon.art", "filemoon.sx", "javboys.tv", "javtrailers.com", "koreanbj.club",
+    "mixdrop.my", "playbokep.cc", "pooo.st", "poop.blue", "poop.cheap", "poop.direct",
+    "poop.email", "poop.lv", "poophd.me", "poops.video", "streamable.cloud",
+    "streamhihi.com", "vide.cx", "vide0.net", "videq.cloud", "videq.boo", "videq.stream",
+    "videy.co", "videy.co.ve", "videyz.ink", "videy.tv", "yasyadong.cc"
+]
 def direct_link_generator(link):
     """direct links generator"""
     domain = urlparse(link).hostname
@@ -34,9 +39,7 @@ def direct_link_generator(link):
         return yandex_disk(link)
     elif any(x in domain for x in ["youtube.com", "youtu.be"]):
         return youtube(link)
-    elif "videq.stream" in domain or "vide.cx" in domain:
-        return x9buddy_scrape(link)
-    elif "vide.cx" in domain:
+    if any(d in domain for d in x9_domains):
         return x9buddy(link)
     elif "buzzheavier.com" in domain:
         return buzzheavier(link)
@@ -238,7 +241,7 @@ def get_captcha_token(session, params):
     res = session.post(f"{recaptcha_api}/reload", params=params)
     if token := findall(r'"rresp","(.*?)"', res.text):
         return token[0]
-        
+
 def youtube(url):
     """
     Generate a direct download link for YouTube URLs using the new API.
@@ -276,21 +279,64 @@ def youtube(url):
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
-        
-def x9buddy_scrape(url):
-    """
-    Jalankan xbuddy.py untuk download dulu ke server,
-    lalu kembalikan metadata file
-    """
+
+def x9buddy(url):
+    from requests import get
+
+    api_url = "https://api.paxsenix.biz.id/dl/9xbuddy"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer sk-paxsenix-o5rC4al3uVrNmwoaTx2wDeyHlMx045CPACxxhqbWohXicFIr"
+    }
+
+    if "/e/" in url:
+        url = url.replace("/e/", "/d/")
+
     try:
-        file_info = asyncio.run(get_direct_file(url))
-        if file_info and "contents" in file_info and file_info["contents"]:
-            if not ospath.exists(file_info["contents"][0]):
-                raise DirectDownloadLinkException(f"ERROR: File not found at {file_info['contents'][0]}")
-            return file_info
-        raise DirectDownloadLinkException("ERROR: Failed to download file from 9xbuddy :D")
+        r = get(api_url, params={"url": url}, headers=headers, timeout=15)
+        if not r.ok:
+            raise DirectDownloadLinkException(f"HTTP Error: {r.status_code}")
+        response = r.json()
     except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+
+    if not response.get("ok") or "response" not in response or "formats" not in response["response"]:
+        raise DirectDownloadLinkException("ERROR: Failed")
+
+    formats = response["response"]["formats"]
+    video_links = [f for f in formats if f.get("type") == "video" and "mp4" in f.get("ext", "")]
+
+    if not video_links:
+        raise DirectDownloadLinkException("ERROR: No MP4 video links found in response")
+
+    # 🔍 Cari hanya domain .workers.dev
+    selected_video = next((v for v in video_links if ".workers.dev" in v["url"]), None)
+
+    if not selected_video:
+        raise DirectDownloadLinkException("ERROR: Belum Support)
+
+    direct_url = selected_video["url"].strip()
+    title = response["response"].get("title", "Unknown")
+    filename = f"{title}.mp4"
+    referer = f"https://{urlparse(url).hostname}/"
+
+    details = {
+        "contents": [{
+            "path": "",
+            "filename": filename,
+            "url": direct_url
+        }],
+        "title": title,
+        "total_size": 0,
+        "header": [
+            f"Referer: {referer}",
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
+        ]
+    }
+
+    return details
+
+
 
 def buzzheavier(url):
     """
