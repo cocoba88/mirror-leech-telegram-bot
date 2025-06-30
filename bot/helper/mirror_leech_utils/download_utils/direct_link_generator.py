@@ -281,7 +281,8 @@ def youtube(url):
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
 
 def x9buddy(url):
-    from requests import get
+    from requests import get, head
+    import re
 
     api_url = "https://api.paxsenix.biz.id/dl/9xbuddy"
     headers = {
@@ -318,6 +319,22 @@ def x9buddy(url):
     direct_url = selected_video["url"].strip()
     title = response["response"].get("title", "Unknown")
     filename = f"{title}.mp4"
+
+    # 🔍 Coba ambil nama file asli dari Content-Disposition jika tersedia
+    try:
+        head_resp = head(direct_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+            "Referer": f"https://{urlparse(url).hostname}/"
+        }, allow_redirects=True, timeout=10)
+
+        if "Content-Disposition" in head_resp.headers:
+            cd = head_resp.headers["Content-Disposition"]
+            match = re.search(r'filename="(.+?)"', cd)
+            if match:
+                filename = match.group(1)
+    except Exception:
+        pass  # fallback tetap pakai judul dari API
+
     referer = f"https://{urlparse(url).hostname}/"
 
     details = {
@@ -335,8 +352,6 @@ def x9buddy(url):
     }
 
     return details
-
-
 
 def buzzheavier(url):
     """
