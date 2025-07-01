@@ -30,7 +30,19 @@ x9_domains = [
     "streamhihi.com", "vide.cx", "vide0.net", "videq.cloud", "videq.boo", "videq.stream",
     "videy.co", "videy.co.ve", "videyz.ink", "videy.tv", "yasyadong.cc"
 ]
+def normalize_url(url: str) -> str:
+    from logging import info as loginfo
+    parsed = urlparse(url)
+    hostname = parsed.hostname.lower()
+
+    if match(r"^(vi?d[aeiygk]{1,3})\.pro$", hostname):
+        loginfo(f"[normalize_url] Rewriting {hostname} → vide.cx")
+        url = url.replace(hostname, "vide.cx")
+
+    return url
 def direct_link_generator(link):
+    # ✅ Tambahkan baris ini untuk normalisasi domain lebih awal
+    link = normalize_url(link)
     """direct links generator"""
     domain = urlparse(link).hostname
     if not domain:
@@ -283,6 +295,13 @@ def youtube(url):
 def x9buddy(url):
     from requests import get, head
     import re
+    from urllib.parse import urlparse
+    from logging import info as loginfo
+
+    # Normalisasi domain sebelum apapun
+    url = normalize_url(url)
+    # ✅ Tampilkan hasil normalisasi ke log
+    loginfo(f"[x9buddy] Final normalized URL: {url}")
 
     api_url = "https://api.paxsenix.biz.id/dl/9xbuddy"
     headers = {
