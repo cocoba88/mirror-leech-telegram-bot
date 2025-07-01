@@ -14,9 +14,17 @@ from ...telegram_helper.message_utils import send_status_message
 
 async def add_direct_download(listener, path):
     details = listener.link
-    if not (contents := details.get("contents")):
+    contents = details.get("contents")
+
+    if not contents:
         await listener.on_download_error("There is nothing to download!")
         return
+
+    # ✅ Letakkan log DI SINI
+    LOGGER.info(f"🔍 Direct Download URL: {contents[0]['url']}")
+    LOGGER.info(f"📦 Filename: {contents[0]['filename']}")
+    LOGGER.info(f"🧾 Headers: {details.get('header', [])}")
+
     listener.size = details["total_size"]
 
     if not listener.name:
