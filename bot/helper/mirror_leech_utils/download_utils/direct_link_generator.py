@@ -244,41 +244,41 @@ def get_captcha_token(session, params):
 
 def youtube(url):
     """
-    Generate a direct download link for YouTube URLs using the new API.
+    Generate a direct download link for YouTube URLs using FanzOffc API.
     @param url: URL from youtube.com or youtu.be
     @return: Direct download link or details dictionary
     """
     try:
-        # Encode the URL
-        encoded_url = quote(url)
-        api_url = f"https://www.ikyiizyy.my.id/download/ytmp4?apikey=new&url={encoded_url}"
+        from requests import get
+        from urllib.parse import quote
 
-        # Request to the API
+        encoded_url = quote(url)
+        api_url = f"https://api.fanzoffc.eu.org/api/ytmp4/?url={encoded_url}&apikey=FanzOffc"
+
         response = get(api_url, headers={"User-Agent": user_agent}).json()
 
-        # Check status
-        if not response.get("status") or "result" not in response:
+        if not response.get("status") or "data" not in response:
             raise DirectDownloadLinkException("ERROR: Invalid response or download link not found")
 
-        result = response["result"]
+        result = response["data"]
 
-        # Build details dictionary
         details = {
             "contents": [{
                 "path": "",
-                "filename": f"{result['title']}.mp4",
-                "url": result["download"]
+                "filename": f"{response.get('title', 'Unknown Title')}.mp4",
+                "url": result["link"]
             }],
-            "title": result.get("title", "Unknown Title"),
-            "total_size": 0,  # Tidak tersedia di response
+            "title": response.get("title", "Unknown Title"),
+            "total_size": 0,
             "header": ""
         }
 
-        return details["contents"][0]["url"]  # Jika hanya ingin langsung link
-        # return details  # Jika ingin seluruh detail
+        return details["contents"][0]["url"]
+        # return details  # Kalau ingin return full metadata
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+
 
 def x9buddy(url):
     from requests import get, head
