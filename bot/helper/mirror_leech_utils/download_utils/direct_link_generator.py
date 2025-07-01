@@ -1497,7 +1497,7 @@ def cf_bypass(url):
     try:
         data = {"cmd": "request.get", "url": url, "maxTimeout": 60000}
         _json = post(
-            "https://cf.jmdkh.eu.org/v1",
+            "http://cf.pika.web.id:8191/v1",
             headers={"Content-Type": "application/json"},
             json=data,
         ).json()
